@@ -1,13 +1,19 @@
 package com.artillexstudios.axtrade.hooks.currency;
 
 import com.artillexstudios.axapi.libs.boostedyaml.block.implementation.Section;
+import com.artillexstudios.axtrade.trade.TradePlayer;
+import com.artillexstudios.axtrade.trade.Trades;
 import me.clip.placeholderapi.PlaceholderAPI;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
+import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 
+import javax.annotation.Nullable;
+import javax.annotation.ParametersAreNonnullByDefault;
 import java.text.DecimalFormat;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
@@ -58,28 +64,38 @@ public class PlaceholderCurrencyHook implements CurrencyHook {
         return Double.parseDouble(PlaceholderAPI.setPlaceholders(pl.getPlayer() == null ? pl : pl.getPlayer(), placeholder));
     }
 
-    @Override
-    public CompletableFuture<Boolean> giveBalance(@NotNull UUID player, double amount) {
-        final OfflinePlayer pl = Bukkit.getOfflinePlayer(player);
+    @NotNull
+    @ParametersAreNonnullByDefault
+    private CompletableFuture<Boolean> processBalance(UUID playerUUID, double amount, String cmdPath) {
+        final OfflinePlayer pl = Bukkit.getOfflinePlayer(playerUUID);
         if (pl.getName() == null) {
             return CompletableFuture.completedFuture(false);
         }
-        final String placeholder = section.getString("settings.give-command")
+
+        // Maybe use OfflinePlayer in trades instead of Player? Idk, maybe there is reason for that tho...
+        @Nullable
+        final Player partner = Optional.ofNullable(pl.getPlayer())
+                .map(Trades::getTrade)
+                .map(t -> t.getPlayer1().getPlayer().getUniqueId().equals(playerUUID) ? t.getPlayer2() : t.getPlayer1())
+                .map(TradePlayer::getPlayer).orElse(null);
+
+        String placeholder = section.getString("settings." + cmdPath)
                 .replace("%amount%", parseNumber(amount))
                 .replace("%player%", pl.getName());
+        if (partner != null)
+            placeholder = placeholder.replace("%partner%", partner.getName());
+
         return CompletableFuture.completedFuture(Bukkit.dispatchCommand(Bukkit.getConsoleSender(), placeholder));
     }
 
     @Override
+    public CompletableFuture<Boolean> giveBalance(@NotNull UUID player, double amount) {
+        return processBalance(player, amount, "give-command");
+    }
+
+    @Override
     public CompletableFuture<Boolean> takeBalance(@NotNull UUID player, double amount) {
-        final OfflinePlayer pl = Bukkit.getOfflinePlayer(player);
-        if (pl.getName() == null) {
-            return CompletableFuture.completedFuture(false);
-        }
-        final String placeholder = section.getString("settings.take-command")
-                .replace("%amount%", parseNumber(amount))
-                .replace("%player%", pl.getName());
-        return CompletableFuture.completedFuture(Bukkit.dispatchCommand(Bukkit.getConsoleSender(), placeholder));
+        return processBalance(player, amount, "take-command");
     }
 
     private String parseNumber(double amount) {
